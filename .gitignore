@@ -331,3 +331,5 @@ ASALocalRun/
 
 sentry.bin
 login.key
+Manifests
+*.json
