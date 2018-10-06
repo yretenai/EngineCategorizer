@@ -318,7 +318,7 @@ namespace EngineCategorizer
                         if (depot["manifests"]["public"].Value == null) continue;
                         if (depot["config"]["oslist"].Value?.Length > 0)
                         {
-                            if (!depot["config"]["oslist"].Value.ToLower().StartsWith("win"))
+                            if (!depot["config"]["oslist"].Value.ToLower().Contains("win"))
                             {
                                 continue;
                             }
