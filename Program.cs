@@ -478,26 +478,33 @@ namespace EngineCategorizer
 
             File.WriteAllBytes($"{steamVDFPath}_ecbak", File.ReadAllBytes(steamVDFPath));
             var steamSharedConfig = KeyValue.LoadAsText(steamVDFPath);
-            var configApps = steamSharedConfig["Software"]["valve"]["steam"]["apps"];
+            var configSteam = steamSharedConfig["Software"]["valve"]["steam"]["apps"];
+
             foreach (var pair in DetectedTags)
             {
-                var configApp = configApps[pair.Key.ToString()];
+                var configApp = configSteam[pair.Key.ToString()];
 
-                var configAppTags = configApp["tags"];
+                var configAppTags = configApp["tags"].Children.Select(x => x.Value).ToHashSet();
 
                 foreach (var tag in pair.Value)
                 {
                     var finalTag = (TagPrefix + tag).Trim();
-                    if (configAppTags.Children.All(x => x.Value.Trim() != finalTag))
-                    {
-                        configAppTags.Children.Add(new KeyValue(configAppTags.Children.Count.ToString(), finalTag));
-                    }
+                    configAppTags.Add(finalTag);
                 }
 
-                configApp["tags"] = configAppTags;
+                configApp["tags"] = new KeyValue("tags");
 
-                configApps[pair.Key.ToString()] = configApp;
+                for (int i = 0; i < configAppTags.Count; ++i)
+                {
+                    configApp["tags"][i.ToString()] = new KeyValue(i.ToString(), configAppTags.ElementAt(i));
+                }
+
+                configSteam[pair.Key.ToString()] = configApp;
             }
+
+            steamSharedConfig["Software"]["valve"]["steam"]["apps"] = configSteam;
+            
+            steamSharedConfig.SaveToFile(steamVDFPath, false);
 
             Running = false;
         }
