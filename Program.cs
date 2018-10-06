@@ -6,6 +6,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Win32;
 using Newtonsoft.Json;
 using SteamKit2;
 
@@ -40,10 +41,7 @@ namespace EngineCategorizer
             new Dictionary<string, Func<List<string>, float>>
             {
                 {
-                    "Unity", (fileList) =>
-                    {
-                        return fileList.Any(x => x.Contains("UnityEngine")) ? 1.0f : 0.0f;
-                    }
+                    "Unity", (fileList) => { return fileList.Any(x => x.Contains("UnityEngine")) ? 1.0f : 0.0f; }
                 },
                 {
                     "Source", (fileList) =>
@@ -81,12 +79,12 @@ namespace EngineCategorizer
                     }
                 },
                 {
-                    "Unreal Engine 3", (fileList) =>
+                    "Unreal Engine 2/3", (fileList) =>
                     {
                         var fileNames = fileList.Select(x => Path.GetFileName(x).ToLower()).ToList();
                         if (fileNames.Any(x => x.StartsWith("ue3redist"))) return 1.0f;
                         var amount = 0.0f;
-                        if (fileList.Any(x => x.Contains("CookedPC"))) amount += 0.3f;
+                        if (fileList.Any(x => x.Contains("CookedPC"))) amount += 0.5f;
                         if (fileNames.Contains("crashreportclient.exe")) amount += 0.1f;
                         return amount;
                     }
@@ -139,20 +137,52 @@ namespace EngineCategorizer
                     "Frostbyte", (fileList) =>
                     {
                         var fileNames = fileList.Select(x => Path.GetFileName(x).ToLower()).ToList();
-                        return (float)fileNames.Count(x => x.EndsWith(".fbrb")) / fileNames.Count;
+                        return (float) fileNames.Count(x => x.EndsWith(".fbrb")) / fileNames.Count;
                     }
                 },
             };
 
+        public static string GetSteamDirectory()
+        {
+            try
+            {
+                return (string)Registry.GetValue(
+                    RegistryPathToSteam,
+                    "InstallPath",
+                    null);
+            }
+            catch
+            {
+                // ignored
+            }
+            return null;
+        }
+
+        private static string RegistryPathToSteam => Environment.Is64BitProcess ? @"HKEY_LOCAL_MACHINE\Software\Wow6432Node\Valve\Steam" : @"HKEY_LOCAL_MACHINE\Software\Valve\Steam";
+
         public Program()
         {
-            while (string.IsNullOrWhiteSpace(SteamDirectory) || !Directory.Exists(Path.Combine(SteamDirectory, "userdata")))
+            SteamDirectory = GetSteamDirectory();
+            
+            if(!string.IsNullOrWhiteSpace(SteamDirectory) &&
+               Directory.Exists(Path.Combine(SteamDirectory, "userdata")))
             {
                 Logger.Log24Bit(ConsoleSwatch.XTermColor.OrangeRed, false, Console.Out, string.Empty,
-                    "Steam Directory: ");
-                SteamDirectory = Logger.ReadLine(Console.Out, false);
+                    "Auto detected Steam Directory: ");
+                Logger.Log24Bit(ConsoleSwatch.XTermColor.White, true, Console.Out, string.Empty,
+                    SteamDirectory);
             }
-            
+            else
+            {
+                while (string.IsNullOrWhiteSpace(SteamDirectory) ||
+                       !Directory.Exists(Path.Combine(SteamDirectory, "userdata")))
+                {
+                    Logger.Log24Bit(ConsoleSwatch.XTermColor.OrangeRed, false, Console.Out, string.Empty,
+                        "Steam Directory: ");
+                    SteamDirectory = Logger.ReadLine(Console.Out, false);
+                }
+            }
+
             while (string.IsNullOrWhiteSpace(TagPrefix))
             {
                 Logger.Log24Bit(ConsoleSwatch.XTermColor.OrangeRed, false, Console.Out, string.Empty,
@@ -235,7 +265,7 @@ namespace EngineCategorizer
                     $"Can't find VDF at path {steamVDFPath}");
                 return;
             }
-                
+
             var packageIds = licenseList.Select(x => x.PackageID);
 
             if (!Directory.Exists("Manifests"))
@@ -267,13 +297,16 @@ namespace EngineCategorizer
 
             var appPICS = await Apps.PICSGetProductInfo(appIds, Array.Empty<uint>(), false);
 
-            var appPICSSane = appPICS.Results.SelectMany(x => x.Apps).Where(x => x.Value.KeyValues["depots"].Children.Count > 0);
+            var appPICSSane = appPICS.Results.SelectMany(x => x.Apps)
+                .Where(x => x.Value.KeyValues["depots"].Children.Count > 0);
 
-            var appPICSArray = appPICSSane as KeyValuePair<uint, SteamApps.PICSProductInfoCallback.PICSProductInfo>[] ?? appPICSSane.ToArray();
-            
-            Logger.Log24Bit(ConsoleSwatch.XTermColor.Orange, true, Console.Out, string.Empty,
-                $"{appPICSArray.Length} depots");
-            
+            var appPICSArray = appPICSSane as KeyValuePair<uint, SteamApps.PICSProductInfoCallback.PICSProductInfo>[] ??
+                               appPICSSane.ToArray();
+
+            var appsDepots =
+                new Dictionary<KeyValuePair<uint, SteamApps.PICSProductInfoCallback.PICSProductInfo>,
+                    Dictionary<uint, ulong>>();
+
             foreach (var appData in appPICSArray)
             {
                 var appDepots = new Dictionary<uint, ulong>();
@@ -283,6 +316,13 @@ namespace EngineCategorizer
                     foreach (var depot in appInfo["depots"].Children)
                     {
                         if (depot["manifests"]["public"].Value == null) continue;
+                        if (depot["config"]["oslist"].Value?.Length > 0)
+                        {
+                            if (!depot["config"]["oslist"].Value.ToLower().StartsWith("win"))
+                            {
+                                continue;
+                            }
+                        }
 
                         if (uint.TryParse(depot.Name, out var depotId) && depotIds.Contains(depotId) &&
                             ulong.TryParse(depot["manifests"]["public"].Value, out var manifestId))
@@ -294,6 +334,16 @@ namespace EngineCategorizer
 
                 if (appDepots.Count == 0) continue;
 
+                appsDepots[appData] = appDepots;
+            }
+
+            Logger.Log24Bit(ConsoleSwatch.XTermColor.Orange, true, Console.Out, string.Empty,
+                $"{appsDepots.Select(x => x.Value.Count).Sum()} depots");
+
+            foreach (var appDataDepots in appsDepots)
+            {
+                var appData = appDataDepots.Key;
+                var appDepots = appDataDepots.Value;
                 KeyValuePair<CDNClient, CDNClient.Server> cdnPair = new KeyValuePair<CDNClient, CDNClient.Server>();
                 try
                 {
@@ -324,29 +374,35 @@ namespace EngineCategorizer
 
                             if (ManifestData == null)
                             {
-                                if (cdnPair.Key == null)
-                                {
-                                    cdnPair = await GetConnectionForAppAsync(appData.Key);
-                                }
-
-                                await AuthenticateDepot(cdnPair, depotId, appData.Key);
-
                                 try
                                 {
+                                    if (cdnPair.Key == null)
+                                    {
+                                        cdnPair = await GetConnectionForAppAsync(appData.Key);
+                                    }
+
+                                    await AuthenticateDepot(cdnPair, depotId, appData.Key);
+
                                     var manifest = await cdnPair.Key.DownloadManifestAsync(depotId, appDepots[depotId]);
                                     ManifestData = manifest.Files.Select(x => x.FileName);
                                     File.WriteAllText(manifestFn, JsonConvert.SerializeObject(ManifestData));
                                 }
                                 catch
                                 {
-                                    continue;
+                                    ManifestData = Array.Empty<string>();
+                                    File.WriteAllText(manifestFn, JsonConvert.SerializeObject(ManifestData));
                                 }
                             }
 
                             var manifestData = ManifestData.ToList();
 
+                            if (manifestData.Count == 0)
+                            {
+                                continue;
+                            }
+
                             Confidence = new Dictionary<string, float>();
-                            
+
                             foreach (var pair in EngineTest)
                             {
                                 if (Confidence.ContainsKey(pair.Key))
@@ -362,11 +418,12 @@ namespace EngineCategorizer
 
                         // ReSharper disable once CompareOfFloatsByEqualityOperator
                         if (Confidence.Count == 0 || Confidence.Values.Sum() == 0.0) continue;
-                        
+
                         Logger.Log24Bit(ConsoleSwatch.XTermColor.Orange, false, Console.Out, string.Empty,
                             "Confidence Rating for ");
                         Logger.Log24Bit(ConsoleSwatch.XTermColor.Orchid, true, Console.Out, string.Empty,
                             $"{appData.Value.KeyValues["common"]["name"].Value} ({appData.Key})");
+                        bool hasValid = false;
                         foreach (var pair in Confidence)
                         {
                             // ReSharper disable once CompareOfFloatsByEqualityOperator
@@ -374,7 +431,7 @@ namespace EngineCategorizer
                             {
                                 continue;
                             }
-                            
+
                             var color = ConsoleSwatch.XTermColor.Green;
                             if (pair.Value < 0.5)
                             {
@@ -397,9 +454,14 @@ namespace EngineCategorizer
                             }
 
                             DetectedTags[appData.Key].Add(pair.Key);
+
+                            hasValid = true;
                         }
 
-                        break;
+                        if (hasValid)
+                        {
+                            break;
+                        }
                     }
                 }
                 catch
@@ -433,10 +495,10 @@ namespace EngineCategorizer
                 }
 
                 configApp["tags"] = configAppTags;
-                
+
                 configApps[pair.Key.ToString()] = configApp;
             }
-            
+
             Running = false;
         }
 
