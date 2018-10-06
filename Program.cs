@@ -298,7 +298,7 @@ namespace EngineCategorizer
             var appPICS = await Apps.PICSGetProductInfo(appIds, Array.Empty<uint>(), false);
 
             var appPICSSane = appPICS.Results.SelectMany(x => x.Apps)
-                .Where(x => x.Value.KeyValues["depots"].Children.Count > 0);
+                .Where(x => x.Value.KeyValues["common"]["type"].Value?.ToLower() == "game" && x.Value.KeyValues["depots"].Children.Count > 0);
 
             var appPICSArray = appPICSSane as KeyValuePair<uint, SteamApps.PICSProductInfoCallback.PICSProductInfo>[] ??
                                appPICSSane.ToArray();
