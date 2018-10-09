@@ -328,9 +328,7 @@ namespace EngineCategorizer
 
             var appPICS = await Apps.PICSGetProductInfo(appIds, Array.Empty<uint>(), false);
 
-            var appPICSSane = appPICS.Results.SelectMany(x => x.Apps)
-                .Where(x => x.Value.KeyValues["common"]["type"].Value?.ToLower() == "game" &&
-                            x.Value.KeyValues["depots"].Children.Count > 0);
+            var appPICSSane = appPICS.Results.SelectMany(x => x.Apps);
 
             var appPICSArray = appPICSSane as KeyValuePair<uint, SteamApps.PICSProductInfoCallback.PICSProductInfo>[] ??
                                appPICSSane.ToArray();
@@ -359,6 +357,11 @@ namespace EngineCategorizer
                 {
                     DetectedTags[appData.Key].Add(PrefixTag(PrefixMode.Publisher, PUBLISHER_PREFIX,
                         appInfo["extended"]["publisher"].AsString().Trim()));
+                }
+
+                if(appInfo["common"]["type"].Value?.ToLower() != "game")
+                {
+                    continue;
                 }
 
                 if (appInfo["depots"].Children.Count > 0)
