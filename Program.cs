@@ -15,7 +15,6 @@ namespace EngineCategorizer
     public class Program
     {
         private string SteamDirectory;
-        private string TagPrefix;
         private string SteamUsername;
         private string SteamPassword;
 
@@ -31,22 +30,40 @@ namespace EngineCategorizer
 
         private bool SteamShouldRemember;
 
+        public bool ShouldResetTags { get; }
+        public bool ShouldAddDeveloper { get; }
+        public bool ShouldAddPublisher { get; }
+        public PrefixMode ShouldUsePrefixes { get; }
+        
+        private const string ENGINE_PREFIX = "Engine: ";
+        private const string PUBLISHER_PREFIX = "Publisher: ";
+        private const string DEVELOPER_PREFIX = "Developer: ";
+
+        [Flags]
+        public enum PrefixMode
+        {
+            None = 0,
+            Engine = 1,
+            Publisher = 2,
+            Developer = 4
+        }
+        
+
         private static void Main()
         {
             var unused = new Program();
         }
 
-        [SuppressMessage("ReSharper", "StringLiteralTypo")]
-        public Dictionary<string, Func<List<string>, float>> EngineTest =
-            new Dictionary<string, Func<List<string>, float>>
+        [SuppressMessage("ReSharper", "StringLiteralTypo")] [SuppressMessage("ReSharper", "PossibleMultipleEnumeration")]
+        public Dictionary<string, Func<ParallelQuery<string>, ParallelQuery<string>, float>> EngineTest =
+            new Dictionary<string, Func<ParallelQuery<string>, ParallelQuery<string>, float>>
             {
                 {
-                    "Unity", (fileList) => { return fileList.Any(x => x.Contains("UnityEngine")) ? 1.0f : 0.0f; }
+                    "Unity", (fileList, fileNames) => { return fileList.Any(x => x.Contains("UnityEngine")) ? 1.0f : 0.0f; }
                 },
                 {
-                    "Source", (fileList) =>
+                    "Source", (fileList, fileNames) =>
                     {
-                        var fileNames = fileList.Select(x => Path.GetFileName(x).ToLower()).ToList();
                         var amount = 0.0f;
                         if (fileNames.Contains("hl2.exe")) amount += 0.6f;
                         if (fileNames.Contains("engine.dll")) amount += 0.4f;
@@ -56,9 +73,8 @@ namespace EngineCategorizer
                     }
                 },
                 {
-                    "Source 2", (fileList) =>
+                    "Source 2", (fileList, fileNames) =>
                     {
-                        var fileNames = fileList.Select(x => Path.GetFileName(x).ToLower()).ToList();
                         var amount = 0.0f;
                         if (fileNames.Contains("engine2.dll")) amount += 0.35f;
                         if (fileNames.Contains("vconsole.exe")) amount += 0.35f;
@@ -68,9 +84,8 @@ namespace EngineCategorizer
                     }
                 },
                 {
-                    "Unreal Engine 4", (fileList) =>
+                    "Unreal Engine 4", (fileList, fileNames) =>
                     {
-                        var fileNames = fileList.Select(x => Path.GetFileName(x).ToLower()).ToList();
                         if (fileNames.Any(x => x.StartsWith("ue4prereqsetup"))) return 1.0f;
                         var amount = 0.0f;
                         if (fileList.Any(x => x.Contains("CookedPC"))) amount += 0.3f;
@@ -79,9 +94,8 @@ namespace EngineCategorizer
                     }
                 },
                 {
-                    "Unreal Engine 2/3", (fileList) =>
+                    "Unreal Engine Y3", (fileList, fileNames) =>
                     {
-                        var fileNames = fileList.Select(x => Path.GetFileName(x).ToLower()).ToList();
                         if (fileNames.Any(x => x.StartsWith("ue3redist"))) return 1.0f;
                         var amount = 0.0f;
                         if (fileList.Any(x => x.Contains("CookedPC"))) amount += 0.5f;
@@ -90,9 +104,8 @@ namespace EngineCategorizer
                     }
                 },
                 {
-                    "RPG Maker (HTML)", (fileList) =>
+                    "RPG Maker (HTML)", (fileList, fileNames) =>
                     {
-                        var fileNames = fileList.Select(x => Path.GetFileName(x).ToLower()).ToList();
                         var amount = 0.0f;
                         if (fileNames.Contains("nw.pak")) amount += 0.1f;
                         if (fileNames.Contains("credits.html")) amount += 0.1f;
@@ -108,16 +121,11 @@ namespace EngineCategorizer
                     }
                 },
                 {
-                    "OGRE", (fileList) =>
-                    {
-                        var fileNames = fileList.Select(x => Path.GetFileName(x).ToLower()).ToList();
-                        return fileNames.Contains("ogremain.dll") ? 1.0f : 0.0f;
-                    }
+                    "OGRE", (fileList, fileNames) => fileNames.Contains("ogremain.dll") ? 1.0f : 0.0f
                 },
                 {
-                    "Panda3D", (fileList) =>
+                    "Panda3D", (fileList, fileNames) =>
                     {
-                        var fileNames = fileList.Select(x => Path.GetFileName(x).ToLower()).ToList();
                         var amount = 0.0f;
                         if (fileList.Any(x => x.Contains("panda3d"))) amount += 0.05f;
                         if (fileNames.Contains("p3dpython.exe")) amount += 0.10f;
@@ -134,11 +142,13 @@ namespace EngineCategorizer
                     }
                 },
                 {
-                    "Frostbyte", (fileList) =>
-                    {
-                        var fileNames = fileList.Select(x => Path.GetFileName(x).ToLower()).ToList();
-                        return (float) fileNames.Count(x => x.EndsWith(".fbrb")) / fileNames.Count;
-                    }
+                    "Frostbyte", (fileList, fileNames) => (float) fileNames.Count(x => x.EndsWith(".fbrb")) / fileNames.Count()
+                },
+                {
+                    "Telltale Engine", (fileList, fileNames) => fileNames.Any(x => x.EndsWith(".ttarch")) ? 1.0f : 0.0f
+                },
+                {
+                    "Telltale Engine 2", (fileList, fileNames) => fileNames.Contains("ttmediaengine64.dll") ? 1.0f : (fileNames.Any(x => x.EndsWith(".ttarch2")) ? 1.0f : 0.0f)
                 },
             };
 
@@ -183,11 +193,23 @@ namespace EngineCategorizer
                 }
             }
 
-            while (string.IsNullOrWhiteSpace(TagPrefix))
+            Logger.Log24Bit(ConsoleSwatch.XTermColor.OrangeRed, false, Console.Out, string.Empty,
+                "Include Publisher as Tag (Y/N): ");
+            ShouldAddPublisher = Logger.ReadLine(Console.Out, false).ToLowerInvariant().StartsWith("y");
+
+            Logger.Log24Bit(ConsoleSwatch.XTermColor.OrangeRed, false, Console.Out, string.Empty,
+                "Include Developer as Tag (Y/N): ");
+            ShouldAddDeveloper = Logger.ReadLine(Console.Out, false).ToLowerInvariant().StartsWith("y");
+
+            Logger.Log24Bit(ConsoleSwatch.XTermColor.OrangeRed, false, Console.Out, string.Empty,
+                "Reset Tags (Y/N): ");
+            ShouldResetTags = Logger.ReadLine(Console.Out, false).ToLowerInvariant().StartsWith("y");
+
+            Logger.Log24Bit(ConsoleSwatch.XTermColor.OrangeRed, false, Console.Out, string.Empty,
+                "Prefix Mode (1 = Engine/2 = Publisher/4 = Developer): ");
+            if(int.TryParse(Logger.ReadLine(Console.Out, false), out var prefixMode))
             {
-                Logger.Log24Bit(ConsoleSwatch.XTermColor.OrangeRed, false, Console.Out, string.Empty,
-                    "Tag Prefix: ");
-                TagPrefix = Logger.ReadLine(Console.Out, false);
+                ShouldUsePrefixes = (PrefixMode)prefixMode;
             }
 
             Logger.Log24Bit(ConsoleSwatch.XTermColor.OrangeRed, false, Console.Out, string.Empty, "Username: ");
@@ -308,9 +330,25 @@ namespace EngineCategorizer
                     Dictionary<uint, ulong>>();
 
             foreach (var appData in appPICSArray)
-            {
+            {                
+                if (!DetectedTags.ContainsKey(appData.Key))
+                {
+                    DetectedTags[appData.Key] = new HashSet<string>();
+                }
+                
                 var appDepots = new Dictionary<uint, ulong>();
                 var appInfo = appData.Value.KeyValues;
+
+                if (ShouldAddDeveloper && !string.IsNullOrWhiteSpace(appInfo["extended"]["developer"].AsString()))
+                {
+                    DetectedTags[appData.Key].Add(PrefixTag(PrefixMode.Developer, DEVELOPER_PREFIX, appInfo["extended"]["developer"].AsString().Trim()));
+                }
+
+                if (ShouldAddPublisher && !string.IsNullOrWhiteSpace(appInfo["extended"]["publisher"].AsString()))
+                {
+                    DetectedTags[appData.Key].Add(PrefixTag(PrefixMode.Publisher, PUBLISHER_PREFIX, appInfo["extended"]["publisher"].AsString().Trim()));
+                }
+                
                 if (appInfo["depots"].Children.Count > 0)
                 {
                     foreach (var depot in appInfo["depots"].Children)
@@ -333,6 +371,7 @@ namespace EngineCategorizer
                 }
 
                 if (appDepots.Count == 0) continue;
+                
 
                 appsDepots[appData] = appDepots;
             }
@@ -347,11 +386,6 @@ namespace EngineCategorizer
                 KeyValuePair<CDNClient, CDNClient.Server> cdnPair = new KeyValuePair<CDNClient, CDNClient.Server>();
                 try
                 {
-                    if (!DetectedTags.ContainsKey(appData.Key))
-                    {
-                        DetectedTags[appData.Key] = new HashSet<string>();
-                    }
-
                     foreach (var depotId in appDepots.Keys)
                     {
                         if (!DepotConfidence.TryGetValue(depotId, out Dictionary<string, float> Confidence))
@@ -401,6 +435,8 @@ namespace EngineCategorizer
                                 continue;
                             }
 
+                            var fileNames = manifestData.Select(Path.GetFileName).ToList();
+
                             Confidence = new Dictionary<string, float>();
 
                             foreach (var pair in EngineTest)
@@ -410,7 +446,7 @@ namespace EngineCategorizer
                                     continue;
                                 }
 
-                                Confidence[pair.Key] = Math.Min(1.0f, pair.Value(manifestData));
+                                Confidence[pair.Key] = Math.Min(1.0f, pair.Value(manifestData.AsParallel(), fileNames.AsParallel()));
                             }
                         }
 
@@ -448,12 +484,7 @@ namespace EngineCategorizer
                                 continue;
                             }
 
-                            if (!DetectedTags.ContainsKey(appData.Key))
-                            {
-                                DetectedTags[appData.Key] = new HashSet<string>();
-                            }
-
-                            DetectedTags[appData.Key].Add(pair.Key);
+                            DetectedTags[appData.Key].Add(PrefixTag(PrefixMode.Engine, ENGINE_PREFIX, pair.Key));
 
                             hasValid = true;
                         }
@@ -484,12 +515,18 @@ namespace EngineCategorizer
             {
                 var configApp = configSteam[pair.Key.ToString()];
 
-                var configAppTags = configApp["tags"].Children.Select(x => x.Value).ToHashSet();
+                var origTags = configApp["tags"].Children.Select(x => x.Value).ToHashSet();
 
+                var configAppTags = ShouldResetTags ? new HashSet<string>() : origTags;
+
+                if (ShouldResetTags && origTags.Any(x => x.Equals("favorite", StringComparison.InvariantCultureIgnoreCase)))
+                {
+                    configAppTags.Add("favorite");
+                }
+                
                 foreach (var tag in pair.Value)
                 {
-                    var finalTag = (TagPrefix + tag).Trim();
-                    configAppTags.Add(finalTag);
+                    configAppTags.Add(tag.Trim());
                 }
 
                 configApp["tags"] = new KeyValue("tags");
@@ -507,6 +544,16 @@ namespace EngineCategorizer
             steamSharedConfig.SaveToFile(steamVDFPath, false);
 
             Running = false;
+        }
+
+        private string PrefixTag(PrefixMode mode, string enginePrefix, string tag)
+        {
+            if (ShouldUsePrefixes.HasFlag(mode))
+            {
+                return enginePrefix + tag;
+            }
+
+            return tag;
         }
 
         public Dictionary<uint, byte[]> AppTickets { get; } = new Dictionary<uint, byte[]>();
