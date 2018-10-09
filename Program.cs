@@ -328,7 +328,11 @@ namespace EngineCategorizer
 
             var appPICS = await Apps.PICSGetProductInfo(appIds, Array.Empty<uint>(), false);
 
-            var appPICSSane = appPICS.Results.SelectMany(x => x.Apps);
+            var appPICSSane = appPICS.Results.SelectMany(x => x.Apps).Where(x =>
+                x.Value.KeyValues["common"]["type"].Value?.ToLower() == "game" ||
+                x.Value.KeyValues["common"]["type"].Value?.ToLower() == "demo" ||
+                x.Value.KeyValues["common"]["type"].Value?.ToLower() == "tool" ||
+                x.Value.KeyValues["common"]["type"].Value?.ToLower() == "application");
 
             var appPICSArray = appPICSSane as KeyValuePair<uint, SteamApps.PICSProductInfoCallback.PICSProductInfo>[] ??
                                appPICSSane.ToArray();
@@ -336,7 +340,7 @@ namespace EngineCategorizer
             var appsDepots =
                 new Dictionary<KeyValuePair<uint, SteamApps.PICSProductInfoCallback.PICSProductInfo>,
                     Dictionary<uint, ulong>>();
-
+            
             foreach (var appData in appPICSArray)
             {
                 if (!DetectedTags.ContainsKey(appData.Key))
@@ -359,7 +363,7 @@ namespace EngineCategorizer
                         appInfo["extended"]["publisher"].AsString().Trim()));
                 }
 
-                if(appInfo["common"]["type"].Value?.ToLower() != "game")
+                if(appInfo["common"]["type"].Value?.ToLower() != "game" && appInfo["common"]["type"].Value?.ToLower() != "demo")
                 {
                     continue;
                 }
@@ -524,12 +528,32 @@ namespace EngineCategorizer
             }
 
             File.WriteAllBytes($"{steamVDFPath}_ecbak", File.ReadAllBytes(steamVDFPath));
-            var steamSharedConfig = KeyValue.LoadAsText(steamVDFPath);
+            var steamSharedConfig = KeyValue.LoadAsText(steamVDFPath) ?? new KeyValue("UserLocalConfigStore");
             var configSteam = steamSharedConfig["Software"]["valve"]["steam"]["apps"];
+            // because SteamKit's KeyValue returns a static "Invalid" KeyValue store, this is required or it becomes circular
+            // Thanks.
+            if (configSteam.Name == null)
+            {
+                if (steamSharedConfig["Software"].Name == null)
+                {
+                    steamSharedConfig["Software"] = new KeyValue();
+                }
+                if (steamSharedConfig["Software"]["valve"].Name == null)
+                {
+                    steamSharedConfig["Software"]["valve"] = new KeyValue();
+                }
+                if (steamSharedConfig["Software"]["valve"]["steam"].Name == null)
+                {
+                    steamSharedConfig["Software"]["valve"]["steam"] = new KeyValue();
+                }
+                configSteam = steamSharedConfig["Software"]["valve"]["steam"]["apps"] = new KeyValue();
+            }
 
+            File.WriteAllText($"{steamVDFPath}.json", JsonConvert.SerializeObject(DetectedTags));
+            
             foreach (var pair in DetectedTags)
             {
-                var configApp = configSteam[pair.Key.ToString()];
+                var configApp = GetKeyValueEntry(configSteam, pair.Key);
 
                 var origTags = configApp["tags"].Children.Select(x => x.Value).Where(x => !string.IsNullOrWhiteSpace(x))
                     .ToHashSet();
@@ -548,12 +572,7 @@ namespace EngineCategorizer
                 }
 
                 configApp["tags"] = new KeyValue("tags");
-
-                for (int i = 0; i < configAppTags.Count; ++i)
-                {
-                    configApp["tags"][i.ToString()] = new KeyValue(i.ToString(), configAppTags.ElementAt(i));
-                }
-
+                configApp["tags"].Children.AddRange(configAppTags.Select((x,y) => new KeyValue(y.ToString(), x)));
                 configSteam[pair.Key.ToString()] = configApp;
             }
 
@@ -562,6 +581,15 @@ namespace EngineCategorizer
             steamSharedConfig.SaveToFile(steamVDFPath, false);
 
             Running = false;
+        }
+
+        private KeyValue GetKeyValueEntry(KeyValue kv, object key)
+        {
+            var keyStr = key.ToString();
+            var child =kv.Children
+                .FirstOrDefault( c => string.Equals( c.Name, keyStr, StringComparison.OrdinalIgnoreCase ) );
+
+            return child ?? new KeyValue(keyStr);
         }
 
         private string PrefixTag(PrefixMode mode, string enginePrefix, string tag)
