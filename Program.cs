@@ -34,7 +34,7 @@ namespace EngineCategorizer
         public bool ShouldAddDeveloper { get; }
         public bool ShouldAddPublisher { get; }
         public PrefixMode ShouldUsePrefixes { get; }
-        
+
         private const string ENGINE_PREFIX = "Engine: ";
         private const string PUBLISHER_PREFIX = "Publisher: ";
         private const string DEVELOPER_PREFIX = "Developer: ";
@@ -47,19 +47,21 @@ namespace EngineCategorizer
             Publisher = 2,
             Developer = 4
         }
-        
+
 
         private static void Main()
         {
             var unused = new Program();
         }
 
-        [SuppressMessage("ReSharper", "StringLiteralTypo")] [SuppressMessage("ReSharper", "PossibleMultipleEnumeration")]
+        [SuppressMessage("ReSharper", "StringLiteralTypo")]
+        [SuppressMessage("ReSharper", "PossibleMultipleEnumeration")]
         public Dictionary<string, Func<ParallelQuery<string>, ParallelQuery<string>, float>> EngineTest =
             new Dictionary<string, Func<ParallelQuery<string>, ParallelQuery<string>, float>>
             {
                 {
-                    "Unity", (fileList, fileNames) => { return fileList.Any(x => x.Contains("UnityEngine")) ? 1.0f : 0.0f; }
+                    "Unity",
+                    (fileList, fileNames) => { return fileList.Any(x => x.Contains("UnityEngine")) ? 1.0f : 0.0f; }
                 },
                 {
                     "Source", (fileList, fileNames) =>
@@ -94,7 +96,7 @@ namespace EngineCategorizer
                     }
                 },
                 {
-                    "Unreal Engine Y3", (fileList, fileNames) =>
+                    "Unreal Engine 3", (fileList, fileNames) =>
                     {
                         if (fileNames.Any(x => x.StartsWith("ue3redist"))) return 1.0f;
                         var amount = 0.0f;
@@ -142,13 +144,17 @@ namespace EngineCategorizer
                     }
                 },
                 {
-                    "Frostbyte", (fileList, fileNames) => (float) fileNames.Count(x => x.EndsWith(".fbrb")) / fileNames.Count()
+                    "Frostbyte",
+                    (fileList, fileNames) => (float) fileNames.Count(x => x.EndsWith(".fbrb")) / fileNames.Count()
                 },
                 {
                     "Telltale Engine", (fileList, fileNames) => fileNames.Any(x => x.EndsWith(".ttarch")) ? 1.0f : 0.0f
                 },
                 {
-                    "Telltale Engine 2", (fileList, fileNames) => fileNames.Contains("ttmediaengine64.dll") ? 1.0f : (fileNames.Any(x => x.EndsWith(".ttarch2")) ? 1.0f : 0.0f)
+                    "Telltale Engine 2",
+                    (fileList, fileNames) => fileNames.Contains("ttmediaengine64.dll")
+                        ? 1.0f
+                        : (fileNames.Any(x => x.EndsWith(".ttarch2")) ? 1.0f : 0.0f)
                 },
             };
 
@@ -156,7 +162,7 @@ namespace EngineCategorizer
         {
             try
             {
-                return (string)Registry.GetValue(
+                return (string) Registry.GetValue(
                     RegistryPathToSteam,
                     "InstallPath",
                     null);
@@ -165,17 +171,20 @@ namespace EngineCategorizer
             {
                 // ignored
             }
+
             return null;
         }
 
-        private static string RegistryPathToSteam => Environment.Is64BitProcess ? @"HKEY_LOCAL_MACHINE\Software\Wow6432Node\Valve\Steam" : @"HKEY_LOCAL_MACHINE\Software\Valve\Steam";
+        private static string RegistryPathToSteam => Environment.Is64BitProcess
+            ? @"HKEY_LOCAL_MACHINE\Software\Wow6432Node\Valve\Steam"
+            : @"HKEY_LOCAL_MACHINE\Software\Valve\Steam";
 
         public Program()
         {
             SteamDirectory = GetSteamDirectory();
-            
-            if(!string.IsNullOrWhiteSpace(SteamDirectory) &&
-               Directory.Exists(Path.Combine(SteamDirectory, "userdata")))
+
+            if (!string.IsNullOrWhiteSpace(SteamDirectory) &&
+                Directory.Exists(Path.Combine(SteamDirectory, "userdata")))
             {
                 Logger.Log24Bit(ConsoleSwatch.XTermColor.OrangeRed, false, Console.Out, string.Empty,
                     "Auto detected Steam Directory: ");
@@ -207,9 +216,9 @@ namespace EngineCategorizer
 
             Logger.Log24Bit(ConsoleSwatch.XTermColor.OrangeRed, false, Console.Out, string.Empty,
                 "Prefix Mode (1 = Engine/2 = Publisher/4 = Developer): ");
-            if(int.TryParse(Logger.ReadLine(Console.Out, false), out var prefixMode))
+            if (int.TryParse(Logger.ReadLine(Console.Out, false), out var prefixMode))
             {
-                ShouldUsePrefixes = (PrefixMode)prefixMode;
+                ShouldUsePrefixes = (PrefixMode) prefixMode;
             }
 
             Logger.Log24Bit(ConsoleSwatch.XTermColor.OrangeRed, false, Console.Out, string.Empty, "Username: ");
@@ -320,7 +329,8 @@ namespace EngineCategorizer
             var appPICS = await Apps.PICSGetProductInfo(appIds, Array.Empty<uint>(), false);
 
             var appPICSSane = appPICS.Results.SelectMany(x => x.Apps)
-                .Where(x => x.Value.KeyValues["common"]["type"].Value?.ToLower() == "game" && x.Value.KeyValues["depots"].Children.Count > 0);
+                .Where(x => x.Value.KeyValues["common"]["type"].Value?.ToLower() == "game" &&
+                            x.Value.KeyValues["depots"].Children.Count > 0);
 
             var appPICSArray = appPICSSane as KeyValuePair<uint, SteamApps.PICSProductInfoCallback.PICSProductInfo>[] ??
                                appPICSSane.ToArray();
@@ -330,25 +340,27 @@ namespace EngineCategorizer
                     Dictionary<uint, ulong>>();
 
             foreach (var appData in appPICSArray)
-            {                
+            {
                 if (!DetectedTags.ContainsKey(appData.Key))
                 {
                     DetectedTags[appData.Key] = new HashSet<string>();
                 }
-                
+
                 var appDepots = new Dictionary<uint, ulong>();
                 var appInfo = appData.Value.KeyValues;
 
                 if (ShouldAddDeveloper && !string.IsNullOrWhiteSpace(appInfo["extended"]["developer"].AsString()))
                 {
-                    DetectedTags[appData.Key].Add(PrefixTag(PrefixMode.Developer, DEVELOPER_PREFIX, appInfo["extended"]["developer"].AsString().Trim()));
+                    DetectedTags[appData.Key].Add(PrefixTag(PrefixMode.Developer, DEVELOPER_PREFIX,
+                        appInfo["extended"]["developer"].AsString().Trim()));
                 }
 
                 if (ShouldAddPublisher && !string.IsNullOrWhiteSpace(appInfo["extended"]["publisher"].AsString()))
                 {
-                    DetectedTags[appData.Key].Add(PrefixTag(PrefixMode.Publisher, PUBLISHER_PREFIX, appInfo["extended"]["publisher"].AsString().Trim()));
+                    DetectedTags[appData.Key].Add(PrefixTag(PrefixMode.Publisher, PUBLISHER_PREFIX,
+                        appInfo["extended"]["publisher"].AsString().Trim()));
                 }
-                
+
                 if (appInfo["depots"].Children.Count > 0)
                 {
                     foreach (var depot in appInfo["depots"].Children)
@@ -371,7 +383,7 @@ namespace EngineCategorizer
                 }
 
                 if (appDepots.Count == 0) continue;
-                
+
 
                 appsDepots[appData] = appDepots;
             }
@@ -446,7 +458,8 @@ namespace EngineCategorizer
                                     continue;
                                 }
 
-                                Confidence[pair.Key] = Math.Min(1.0f, pair.Value(manifestData.AsParallel(), fileNames.AsParallel()));
+                                Confidence[pair.Key] = Math.Min(1.0f,
+                                    pair.Value(manifestData.AsParallel(), fileNames.AsParallel()));
                             }
                         }
 
@@ -515,15 +528,17 @@ namespace EngineCategorizer
             {
                 var configApp = configSteam[pair.Key.ToString()];
 
-                var origTags = configApp["tags"].Children.Select(x => x.Value).ToHashSet();
+                var origTags = configApp["tags"].Children.Select(x => x.Value).Where(x => !string.IsNullOrWhiteSpace(x))
+                    .ToHashSet();
 
                 var configAppTags = ShouldResetTags ? new HashSet<string>() : origTags;
 
-                if (ShouldResetTags && origTags.Any(x => x.Equals("favorite", StringComparison.InvariantCultureIgnoreCase)))
+                if (ShouldResetTags &&
+                    origTags.Any(x => x.Equals("favorite", StringComparison.InvariantCultureIgnoreCase)))
                 {
                     configAppTags.Add("favorite");
                 }
-                
+
                 foreach (var tag in pair.Value)
                 {
                     configAppTags.Add(tag.Trim());
@@ -540,7 +555,7 @@ namespace EngineCategorizer
             }
 
             steamSharedConfig["Software"]["valve"]["steam"]["apps"] = configSteam;
-            
+
             steamSharedConfig.SaveToFile(steamVDFPath, false);
 
             Running = false;
